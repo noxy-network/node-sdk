@@ -56,11 +56,11 @@ export class PushService {
   private async sendToNetwork(input: NoxySendPushInput): Promise<NoxyPushResponse> {
     const request: NoxyPushNotificationRequest = {
       request_id: generateRequestId(),
-      ciphertext: input.ciphertext,
+      ciphertext: Buffer.isBuffer(input.ciphertext) ? input.ciphertext : Buffer.from(input.ciphertext),
       ttl_seconds: input.ttl_seconds,
       target_device_id: input.target_device_id,
-      kyber_ct: input.kyber_ct,
-      nonce: input.nonce,
+      kyber_ct: Buffer.isBuffer(input.kyber_ct) ? input.kyber_ct : Buffer.from(input.kyber_ct),
+      nonce: Buffer.isBuffer(input.nonce) ? input.nonce : Buffer.from(input.nonce),
     };
 
     return withRetry(
@@ -75,7 +75,10 @@ export class PushService {
     const results: NoxyPushResponse[] = [];
 
     for (const device of devices) {
-      const encryptedNotification = await this.encryptNotification(device.pq_public_key, notificationBuffer);
+      const pqKey = Buffer.isBuffer(device.pq_public_key)
+        ? device.pq_public_key
+        : Buffer.from(device.pq_public_key as ArrayLike<number>);
+      const encryptedNotification = await this.encryptNotification(pqKey, notificationBuffer);
       const input: NoxyPushNotificationRequest = {
         request_id: generateRequestId(),
         ciphertext: encryptedNotification.ciphertext,

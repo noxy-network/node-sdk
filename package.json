@@ -31,7 +31,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf node_modules && rm -rf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "pnpm run build"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",

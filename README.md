@@ -1,4 +1,4 @@
-# @noxy-network/node-sdk
+# 📦 @noxy-network/node-sdk
 
 Backend SDK for Node.js servers to integrate with the [Noxy](https://noxy.network) push notification network. Send encrypted push notifications to Web3 wallet addresses via the Noxy relay infrastructure.
 
@@ -32,13 +32,17 @@ Communication with the Noxy relay is performed over **gRPC** using Protocol Buff
 - Node.js **>= 22**
 - ESM modules (`"type": "module"` in package.json)
 
-## Installation
+## 🚀 Installation
 
 ```bash
 npm install @noxy-network/node-sdk
+# or
+yarn add @noxy-network/node-sdk
+# or
+pnpm add @noxy-network/node-sdk
 ```
 
-## Quick Start
+## 🛠 Quick Start
 
 ```typescript
 import { initNoxyClient } from '@noxy-network/node-sdk';
@@ -112,6 +116,6 @@ pnpm run typecheck
 pnpm run test
 ```
 
-## License
+## 📄 License
 
 MIT

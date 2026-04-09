@@ -1,6 +1,8 @@
+/** Web3 identity (wallet) address for routing decisions to the right agent devices. */
 export type NoxyIdentityAddress = `0x${string}`;
 
-export enum NoxyPushDeliveryStatus {
+/** Relay-side delivery status after `RouteDecision` (matches proto `DeliveryStatus`). */
+export enum NoxyDeliveryStatus {
   DELIVERED = 0,
   QUEUED = 1,
   NO_DEVICES = 2,
@@ -8,26 +10,60 @@ export enum NoxyPushDeliveryStatus {
   ERROR = 4,
 }
 
-export interface NoxyPushNotificationRequest {
+/** gRPC `RouteDecisionRequest` — encrypted actionable decision payload per device. */
+export interface NoxyRouteDecisionRequest {
   request_id: string;
   ciphertext: Uint8Array;
   ttl_seconds: number;
   target_device_id: string;
   kyber_ct: Uint8Array;
   nonce: Uint8Array;
+  decision_id: string;
 }
 
-export type NoxySendPushInput = Omit<NoxyPushNotificationRequest, "request_id">;
+export type NoxySendRouteDecisionInput = Omit<NoxyRouteDecisionRequest, 'request_id'>;
 
-export interface NoxyEncryptedNotification {
+/** Encrypted decision blob before it is wrapped in a full request. */
+export interface NoxyEncryptedDecision {
   kyber_ct: Uint8Array;
   nonce: Uint8Array;
   ciphertext: Uint8Array;
 }
 
-export interface NoxyPushResponse {
-  status: NoxyPushDeliveryStatus;
+/**
+ * Immediate result of `RouteDecision`: relay delivery status + ids for polling human outcome.
+ * Use `decision_id` with `getDecisionOutcome` / `waitForDecisionOutcome` when status allows.
+ */
+export interface NoxyDeliveryOutcome {
+  status: NoxyDeliveryStatus;
   request_id: string;
+  /** Present when the relay accepted the route; use with `identity_id` to poll human approval. */
+  decision_id: string;
+}
+
+/** Human-in-the-loop resolution (matches proto `DecisionOutcome`). */
+export enum NoxyHumanDecisionOutcome {
+  PENDING = 0,
+  APPROVED = 1,
+  REJECTED = 2,
+  EXPIRED = 3,
+}
+
+export interface NoxyGetDecisionOutcomeRequest {
+  request_id: string;
+  decision_id: string;
+  identity_id: string;
+}
+
+export interface NoxyGetDecisionOutcomeResponse {
+  request_id: string;
+  /** True while the user has not finalized approve/reject (or decision still in flight). */
+  pending: boolean;
+  /**
+   * Human resolution from the relay, normalized to {@link NoxyHumanDecisionOutcome}.
+   * Agents typically **continue** only when `APPROVED`; **stop or branch** on `REJECTED` or `EXPIRED`.
+   */
+  outcome: NoxyHumanDecisionOutcome;
 }
 
 export interface NoxyGetQuotaRequest {

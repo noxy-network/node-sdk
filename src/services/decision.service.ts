@@ -1,16 +1,17 @@
 import { NoxyKyberProvider } from '@/client/KyberProvider';
 import { GrpcTransport } from '@/client/transport';
 import type {
-  NoxySendPushInput,
-  NoxyPushResponse,
-  NoxyPushNotificationRequest,
-  NoxyEncryptedNotification,
+  NoxySendRouteDecisionInput,
+  NoxyDeliveryOutcome,
+  NoxyRouteDecisionRequest,
+  NoxyEncryptedDecision,
   NoxyIdentityDevice,
+  NoxyDeliveryStatus,
 } from '@/client/types';
 import { generateRequestId } from '@/utils/request-id';
 import { withRetry } from '@/utils/retries';
 import { JSONStringify } from 'json-with-bigint';
-import { randomBytes, hkdfSync, createCipheriv } from 'node:crypto';
+import { randomBytes, randomUUID, hkdfSync, createCipheriv } from 'node:crypto';
 
 /** gRPC status codes that indicate retryable network/unavailable errors. */
 const RETRYABLE_GRPC_CODES = new Set([2, 4, 8, 14]); // UNKNOWN, DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED, UNAVAILABLE
@@ -30,13 +31,26 @@ function isRetryableNetworkError(err: unknown): boolean {
   return false;
 }
 
-export class PushService {
+function mapDeliveryOutcome(raw: unknown): NoxyDeliveryOutcome {
+  const r = raw as Record<string, unknown>;
+  return {
+    status: Number(r.status ?? 0) as NoxyDeliveryStatus,
+    request_id: String(r.request_id ?? ''),
+    decision_id: String(r.decision_id ?? ''),
+  };
+}
+
+/**
+ * Encrypts and routes actionable decision payloads to devices via the Noxy Decision Layer.
+ * Payloads are JSON (e.g. proposed tool calls, approvals, next-step hints for the agent runtime).
+ */
+export class DecisionService {
   constructor(
     private transport: GrpcTransport,
     private noxyKyberProvider: NoxyKyberProvider
   ) {}
 
-  private async encryptNotification(devicePQPublicKey: Uint8Array, plaintext: Uint8Array): Promise<NoxyEncryptedNotification> {
+  private async encryptDecision(devicePQPublicKey: Uint8Array, plaintext: Uint8Array): Promise<NoxyEncryptedDecision> {
     const { ciphertext: kyberCt, sharedSecret } = this.noxyKyberProvider.encapsulate(devicePQPublicKey);
     const key = Buffer.from(
       hkdfSync('sha256', Buffer.from(sharedSecret), Buffer.alloc(0), Buffer.alloc(0), 32)
@@ -53,39 +67,54 @@ export class PushService {
     };
   }
 
-  private async sendToNetwork(input: NoxySendPushInput): Promise<NoxyPushResponse> {
-    const request: NoxyPushNotificationRequest = {
+  private async sendToNetwork(input: NoxySendRouteDecisionInput): Promise<NoxyDeliveryOutcome> {
+    const request: NoxyRouteDecisionRequest = {
       request_id: generateRequestId(),
       ciphertext: Buffer.isBuffer(input.ciphertext) ? input.ciphertext : Buffer.from(input.ciphertext),
       ttl_seconds: input.ttl_seconds,
       target_device_id: input.target_device_id,
       kyber_ct: Buffer.isBuffer(input.kyber_ct) ? input.kyber_ct : Buffer.from(input.kyber_ct),
       nonce: Buffer.isBuffer(input.nonce) ? input.nonce : Buffer.from(input.nonce),
+      decision_id: input.decision_id,
     };
 
-    return withRetry(
-      () => this.transport.pushNotification(request),
+    const raw = await withRetry(
+      () => this.transport.routeDecision(request),
       3,
       isRetryableNetworkError
     );
+    const mapped = mapDeliveryOutcome(raw);
+    if (!mapped.decision_id && input.decision_id) {
+      return { ...mapped, decision_id: input.decision_id };
+    }
+    return mapped;
   }
 
-  async send(devices: NoxyIdentityDevice[], pushNotification: Record<string, unknown>, { ttlSeconds }: { ttlSeconds: number }): Promise<NoxyPushResponse[]> {
-    const notificationBuffer = Buffer.from(JSONStringify(pushNotification));
-    const results: NoxyPushResponse[] = [];
+  /**
+   * Route an actionable decision to every device registered for the identity.
+   * `decision` should describe what the agent proposes (e.g. tools, parameters, user-visible summary).
+   */
+  async send(
+    devices: NoxyIdentityDevice[],
+    decision: Record<string, unknown>,
+    { ttlSeconds }: { ttlSeconds: number }
+  ): Promise<NoxyDeliveryOutcome[]> {
+    const decisionId = randomUUID();
+    const payloadBuffer = Buffer.from(JSONStringify(decision));
+    const results: NoxyDeliveryOutcome[] = [];
 
     for (const device of devices) {
       const pqKey = Buffer.isBuffer(device.pq_public_key)
         ? device.pq_public_key
         : Buffer.from(device.pq_public_key as ArrayLike<number>);
-      const encryptedNotification = await this.encryptNotification(pqKey, notificationBuffer);
-      const input: NoxyPushNotificationRequest = {
-        request_id: generateRequestId(),
-        ciphertext: encryptedNotification.ciphertext,
+      const encrypted = await this.encryptDecision(pqKey, payloadBuffer);
+      const input: NoxySendRouteDecisionInput = {
+        ciphertext: encrypted.ciphertext,
         ttl_seconds: ttlSeconds,
         target_device_id: device.device_id,
-        kyber_ct: encryptedNotification.kyber_ct,
-        nonce: encryptedNotification.nonce,
+        kyber_ct: encrypted.kyber_ct,
+        nonce: encrypted.nonce,
+        decision_id: decisionId,
       };
       results.push(await this.sendToNetwork(input));
     }

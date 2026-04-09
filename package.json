@@ -1,13 +1,14 @@
 {
   "name": "@noxy-network/node-sdk",
-  "version": "1.0.0",
-  "description": "Secure, private, wallet-native push notifications for Web3.",
+  "version": "2.0.0",
+  "description": "Decision Layer SDK for AI agents. Encrypted actionable decisions over gRPC.",
   "author": "Noxy Network",
   "license": "MIT",
   "keywords": [
     "noxy",
     "noxy-network",
-    "push notifications",
+    "decision-layer",
+    "ai-agents",
     "web3",
     "ai",
     "agent",
@@ -27,7 +28,7 @@
     "src"
   ],
   "scripts": {
-    "build": "rollup -c && cp src/kyber/kyber.wasm dist/kyber.wasm && mkdir -p dist/proto && cp src/proto/noxy.proto dist/proto/noxy.proto",
+    "build": "rollup -c && cp src/kyber/kyber.wasm dist/kyber.wasm && mkdir -p dist/proto && cp src/proto/agent.proto dist/proto/agent.proto",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf node_modules && rm -rf dist",

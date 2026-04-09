@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, it, expect } from 'vitest';
-import { initNoxyClient } from '@/index';
+import { initNoxyAgentClient } from '@/index';
 
 beforeAll(async () => {
   const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -12,16 +12,19 @@ beforeAll(async () => {
     buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 });
 
-describe('initNoxyClient', () => {
-  it('returns a NoxyPushClient', async () => {
-    const client = await initNoxyClient({
-      endpoint: 'https://relay.noxy.network:443',
+describe('initNoxyAgentClient', () => {
+  it('returns a NoxyAgentClient with sendDecision and getQuota', async () => {
+    const client = await initNoxyAgentClient({
+      endpoint: 'https://relay.noxy.network',
       authToken: 'test-token',
-      notificationTtlSeconds: 86400,
+      decisionTtlSeconds: 86400,
     });
 
     expect(client).toBeDefined();
-    expect(typeof client.sendPush).toBe('function');
+    expect(typeof client.sendDecision).toBe('function');
+    expect(typeof client.getDecisionOutcome).toBe('function');
+    expect(typeof client.waitForDecisionOutcome).toBe('function');
+    expect(typeof client.sendDecisionAndWaitForOutcome).toBe('function');
     expect(typeof client.getQuota).toBe('function');
   });
 });

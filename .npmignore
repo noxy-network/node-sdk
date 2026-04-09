@@ -1,0 +1,17 @@
+# Samples and tests (not part of the published API surface)
+examples/
+test/
+coverage/
+
+# CI / editor
+.github/
+
+# Tooling (package uses prebuilt dist/ + src/)
+rollup.config.js
+vitest.config.ts
+tsconfig.json
+
+# Lockfile (consumers resolve deps from registry)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock

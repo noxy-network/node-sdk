@@ -3,8 +3,10 @@ import { loadSync } from '@grpc/proto-loader';
 import { promisify } from 'node:util';
 import { NoxyConfig } from '@/client/config';
 import type {
-  NoxyPushNotificationRequest,
-  NoxyPushResponse,
+  NoxyRouteDecisionRequest,
+  NoxyDeliveryOutcome,
+  NoxyGetDecisionOutcomeRequest,
+  NoxyGetDecisionOutcomeResponse,
   NoxyGetQuotaRequest,
   NoxyGetQuotaResponse,
   NoxyGetIdentityDevicesRequest,
@@ -15,8 +17,8 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const protoInDist = path.join(__dirname, 'proto', 'noxy.proto');
-const protoInSrc = path.join(__dirname, '..', 'proto', 'noxy.proto');
+const protoInDist = path.join(__dirname, 'proto', 'agent.proto');
+const protoInSrc = path.join(__dirname, '..', 'proto', 'agent.proto');
 const PROTO_PATH = existsSync(protoInDist) ? protoInDist : protoInSrc;
 
 const packageDefinition = loadSync(PROTO_PATH, {
@@ -27,17 +29,19 @@ const packageDefinition = loadSync(PROTO_PATH, {
   oneofs: true,
 });
 const proto = loadPackageDefinition(packageDefinition) as unknown as {
-  noxy: { push: { PushService: new (address: string, creds: ReturnType<typeof credentials.createSsl>) => PushServiceClient } };
+  noxy: { agent: { AgentService: new (address: string, creds: ReturnType<typeof credentials.createSsl>) => AgentServiceClient } };
 };
 
-interface PushServiceClient {
-  PushNotification: (req: unknown, metadata: Metadata, cb: (err: Error | null, res: unknown) => void) => unknown;
+interface AgentServiceClient {
+  RouteDecision: (req: unknown, metadata: Metadata, cb: (err: Error | null, res: unknown) => void) => unknown;
+  GetDecisionOutcome: (req: unknown, metadata: Metadata, cb: (err: Error | null, res: unknown) => void) => unknown;
   GetQuota: (req: unknown, metadata: Metadata, cb: (err: Error | null, res: unknown) => void) => unknown;
   GetIdentityDevices: (req: unknown, metadata: Metadata, cb: (err: Error | null, res: unknown) => void) => unknown;
 }
 
 export interface GrpcTransport {
-  pushNotification: (req: NoxyPushNotificationRequest) => Promise<NoxyPushResponse>;
+  routeDecision: (req: NoxyRouteDecisionRequest) => Promise<NoxyDeliveryOutcome>;
+  getDecisionOutcome: (req: NoxyGetDecisionOutcomeRequest) => Promise<NoxyGetDecisionOutcomeResponse>;
   getQuota: (req: NoxyGetQuotaRequest) => Promise<NoxyGetQuotaResponse>;
   getIdentityDevices: (req: NoxyGetIdentityDevicesRequest) => Promise<NoxyGetIdentityDevicesResponse>;
 }
@@ -54,17 +58,21 @@ function normalizeEndpoint(endpoint: string): string {
 }
 
 export function createGrpcTransport(config: NoxyConfig): GrpcTransport {
-  const Client = proto.noxy.push.PushService;
+  const Client = proto.noxy.agent.AgentService;
   const address = normalizeEndpoint(config.endpoint);
   const channelCreds = credentials.createSsl();
-  const client = new Client(address, channelCreds) as PushServiceClient;
+  const client = new Client(address, channelCreds) as AgentServiceClient;
   const metadata = makeMetadata(config.authToken);
 
   return {
-    pushNotification: (req) =>
+    routeDecision: (req) =>
       promisify((r: unknown, cb: (err: Error | null, res: unknown) => void) =>
-        client.PushNotification(r, metadata, cb)
-      )(req) as Promise<NoxyPushResponse>,
+        client.RouteDecision(r, metadata, cb)
+      )(req) as Promise<NoxyDeliveryOutcome>,
+    getDecisionOutcome: (req) =>
+      promisify((r: unknown, cb: (err: Error | null, res: unknown) => void) =>
+        client.GetDecisionOutcome(r, metadata, cb)
+      )(req) as Promise<NoxyGetDecisionOutcomeResponse>,
     getQuota: (req) =>
       promisify((r: unknown, cb: (err: Error | null, res: unknown) => void) =>
         client.GetQuota(r, metadata, cb)

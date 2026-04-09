@@ -1,111 +1,158 @@
-# 📦 @noxy-network/node-sdk
+# @noxy-network/node-sdk
 
-Backend SDK for Node.js servers to integrate with the [Noxy](https://noxy.network) push notification network. Send encrypted push notifications to Web3 wallet addresses via the Noxy relay infrastructure.
+SDK for **AI agent runtimes** integrating with the [Noxy](https://noxy.network) **Decision Layer**: send encrypted, **actionable** decision payloads (tool proposals, approvals, next-step hints) to registered agent devices over gRPC.
+
+**Before you integrate:** Create your app at [noxy.network](https://noxy.network). When the app is created, you receive an **app id** and an **app token** (auth token). This Node SDK authenticates with the relay using the **app token** (`authToken` in the client config). The **app id** is used by client SDKs (browser, iOS, Android, Telegram bot), not as the bearer token here.
 
 ## Overview
 
-This SDK enables server-side applications to:
+Use this SDK to:
 
-- **Send push notifications** to users by their Web3 wallet address (EVM `0x` format)
-- **Query quota usage** for your application's relay allocation
-- **Resolve identity devices** to deliver notifications to all registered devices
+- **Route decisions** to devices bound to a Web3 identity (`0x…` address) — structured JSON you define (e.g. proposed tool calls, parameters, user-visible summaries).
+- **Receive delivery outcomes** from the relay (`DELIVERED`, `QUEUED`, `NO_DEVICES`, etc.) plus a **`decision_id`** when the relay accepts the route.
+- **Wait for human-in-the-loop resolution** — the wallet user **approves**, **rejects**, or the decision **expires**. The usual path is **`sendDecisionAndWaitForOutcome`** (route + poll in one step). Use `getDecisionOutcome` / `waitForDecisionOutcome` alone for finer control.
+- **Query quota** for your agent application on the relay.
+- **Resolve identity devices** so each device receives its own encrypted copy of the decision.
 
-Communication with the Noxy relay is performed over **gRPC** using Protocol Buffers. All notifications are **encrypted end-to-end** on the backend before transmission; decryption occurs only on the recipient's Noxy device. The SDK uses **post-quantum encryption** (Kyber) to protect payloads against future quantum attacks.
+The wire API uses **`agent.proto`** (`noxy.agent.AgentService`): `RouteDecision`, `GetDecisionOutcome`, `GetQuota`, `GetIdentityDevices`.
+
+Communication is **gRPC over TLS** with Bearer authentication. Payloads are **encrypted end-to-end** (Kyber + AES-256-GCM) per device before leaving your process; the relay sees ciphertext only.
 
 ## Architecture
 
-```
-┌─────────────────┐     gRPC (TLS)      ┌─────────────────┐     E2E Encrypted     ┌─────────────────┐
-│  Your Backend   │ ◄─────────────────► │  Noxy Relay     │ ◄──────────────────► │  Noxy Device    │
-│  (this SDK)     │   PushNotification  │                 │   Ciphertext only    │  (decrypts)      │
-│                 │   GetQuota          │                 │                      │                 │
-│                 │   GetIdentityDevices│                 │                      │                 │
-└─────────────────┘                     └─────────────────┘                      └─────────────────┘
-```
+The **encrypted path** covers **SDK → relay** and **relay → device**: decision content is ciphertext on both hops; the relay forwards without decrypting.
 
-- **Encryption**: Kyber (post-quantum KEM) + AES-256-GCM. Each notification is encrypted per-device using the device's post-quantum public key.
-- **Transport**: gRPC over TLS with Bearer token authentication.
-- **Relay**: The Noxy relay forwards ciphertext only; it cannot decrypt notification payloads.
+```
+                      Ciphertext only (E2E)                  Ciphertext only (E2E)
+┌──────────────────┐     gRPC (TLS)      ┌─────────────────┐     gRPC (TLS), WSS  ┌──────────────────┐
+│  AI agent /      │ ◄─────────────────► │  Noxy relay     │ ◄──────────────────► │  Agent device    │
+│  orchestrator    │   RouteDecision     │  (Decision      │                      │  (human approves │
+│  (this SDK)      │   GetDecisionOutcome│   Layer)        │                      │   or rejects)    │
+│                  │   GetQuota          │   forwards only │                      │   decrypts       │
+│                  │   GetIdentityDevices│                 │                      │                  │
+└──────────────────┘                     └─────────────────┘                      └──────────────────┘
+```
 
 ## Requirements
 
 - Node.js **>= 22**
-- ESM modules (`"type": "module"` in package.json)
+- ESM (`"type": "module"`)
 
-## 🚀 Installation
+## Installation
 
 ```bash
 npm install @noxy-network/node-sdk
 # or
-yarn add @noxy-network/node-sdk
-# or
 pnpm add @noxy-network/node-sdk
 ```
 
-## 🛠 Quick Start
+## Quick start
+
+Route a decision and wait until the user **approves**, **rejects**, or the decision **expires** (one call):
 
 ```typescript
-import { initNoxyClient } from '@noxy-network/node-sdk';
+import { initNoxyAgentClient, NoxyHumanDecisionOutcome } from '@noxy-network/node-sdk';
 
-const client = await initNoxyClient({
-  endpoint: 'https://relay.noxy.network:443',
+const client = await initNoxyAgentClient({
+  endpoint: 'https://relay.noxy.network',
   authToken: 'your-api-token',
-  notificationTtlSeconds: 3600,
+  decisionTtlSeconds: 3600,
 });
 
-// Send a push notification to a wallet address
-const results = await client.sendPush('0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1', {
-  title: 'New message',
-  body: 'You have a new notification',
-  data: { action: 'open_chat', id: '123' },
+const identity = '0x...';
+
+const resolution = await client.sendDecisionAndWaitForOutcome(identity, {
+  kind: 'propose_tool_call',
+  tool: 'transfer_funds',
+  args: { to: '0x000000000000000000000000000000000000dEaD', amountWei: '1' },
+  title: 'Transfer 1 wei to the burn address',
+  summary: 'The agent is requesting approval to send 1 wei to the burn address.',
 });
 
-// Check quota usage
-const quota = await client.getQuota();
-console.log(`${quota.quota_remaining} remaining`);
+if (resolution.outcome === NoxyHumanDecisionOutcome.APPROVED) {
+  // run the proposed action
+} else {
+  // REJECTED, EXPIRED, or non-approved — do not run the action (optionally branch on outcome)
+}
 ```
+
+`resolution.outcome` is always a **`NoxyHumanDecisionOutcome`** (normalized from the relay: string enums from gRPC are mapped to `0`–`3`). **`APPROVED`** → continue; anything else → stop or fallback. Use **`isTerminalHumanOutcome(outcome)`** for “finalized vs still pending”; for one-off **`getDecisionOutcome`** polls, also read **`pending`**.
 
 ## Configuration
 
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
-| `endpoint` | `string` | Yes | Noxy relay gRPC endpoint (e.g. `https://relay.noxy.network:443` or `localhost:4433`). Scheme is stripped; TLS is used by default. |
-| `authToken` | `string` | Yes | Bearer token for relay authentication. Sent in the `Authorization` header on every request. |
-| `notificationTtlSeconds` | `number` | Yes | Time-to-live for notifications in seconds. |
+| `endpoint` | `string` | Yes | Relay gRPC endpoint (e.g. `https://relay.noxy.network`). `https://` is stripped; TLS is used. |
+| `authToken` | `string` | Yes | Bearer token for relay auth (`Authorization` header). |
+| `decisionTtlSeconds` | `number` | Yes | TTL for routed decisions (seconds). |
 
-## API Reference
+## SendDecisionAndWaitOptions
 
-### `initNoxyClient(config: NoxyConfig): Promise<NoxyPushClient>`
+Optional third argument to **`sendDecisionAndWaitForOutcome`**
 
-Initializes the SDK client. This is asynchronous because it loads the Kyber WASM module for post-quantum encryption.
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `initialPollIntervalMs` | `number` | No | Delay after the first poll before the next attempt (ms). Default `400`. |
+| `maxPollIntervalMs` | `number` | No | Maximum delay between polls (ms). Default `30000`. |
+| `maxWaitMs` | `number` | No | Total time budget for polling (ms). Default `900000` (15 minutes). Exceeded → `WaitForDecisionOutcomeTimeoutError`. |
+| `backoffMultiplier` | `number` | No | Multiplier applied to the poll interval after each attempt. Default `1.6`. |
+| `signal` | `AbortSignal` | No | When aborted, polling stops with an `AbortError`. |
 
-### `NoxyPushClient`
+## API
 
-#### `sendPush(identityAddress, pushNotification): Promise<NoxyPushResponse[]>`
+### `initNoxyAgentClient(config): Promise<NoxyAgentClient>`
 
-Sends a push notification to all devices registered for the given Web3 identity address.
+Async init (loads Kyber WASM for post-quantum encapsulation).
 
-- **`identityAddress`**: EVM address in `0x` format (e.g. `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1`)
-- **`pushNotification`**: Arbitrary JSON-serializable object (e.g. `{ title, body, data }`). Encrypted before transmission.
-- **Returns**: Array of `NoxyPushResponse` per device, with `status` and `request_id`.
+### `NoxyAgentClient`
+
+#### `sendDecision(identityAddress, actionableDecision): Promise<NoxyDeliveryOutcome[]>`
+
+Routes an encrypted decision to every device registered for the identity.
+
+- **Returns** per device: relay **`status`** (`DELIVERED`, `QUEUED`, `NO_DEVICES`, …), **`request_id`**, and **`decision_id`** when the relay can track human resolution (use with `GetDecisionOutcome`).
+
+#### `getDecisionOutcome({ decisionId, identityId })`
+
+Single poll for human-in-the-loop state (`pending` + `outcome`).
+
+#### `sendDecisionAndWaitForOutcome(identityAddress, actionableDecision, options?)`
+
+Runs `sendDecision`, then `waitForDecisionOutcome` using the **first** delivery that has a non-empty `decision_id`. Polling uses `identityAddress` as `identityId`. Optional `options` is `SendDecisionAndWaitOptions` (same as `WaitForDecisionOutcomeOptions` without `decisionId` or `identityId` — e.g. `maxWaitMs`, backoff, `signal`).
+
+- **Returns** `NoxyGetDecisionOutcomeResponse` (same as `waitForDecisionOutcome`). Throws `SendDecisionAndWaitNoDecisionIdError` if no `decision_id` was returned.
+
+#### `waitForDecisionOutcome(options)`
+
+Polls with **exponential backoff** (configurable `initialPollIntervalMs`, `maxPollIntervalMs`, `backoffMultiplier`) until:
+
+- `outcome` is **APPROVED**, **REJECTED**, or **EXPIRED**, or
+- `pending` becomes `false`, or
+- **`maxWaitMs`** is exceeded → throws `WaitForDecisionOutcomeTimeoutError`.
+
+Options: `decisionId`, `identityId`, `initialPollIntervalMs` (default `400`), `maxPollIntervalMs` (default `30000`), `maxWaitMs` (default `900000`), `backoffMultiplier` (default `1.6`), optional `AbortSignal`.
 
 #### `getQuota(): Promise<NoxyGetQuotaResponse>`
 
-Returns quota usage for your application.
+Quota usage for the application.
 
-- **Returns**: `{ request_id, app_name, quota_total, quota_remaining, status }`
+### Lower-level helpers (also exported)
+
+- `waitForDecisionOutcome(fetch, options)` — pass your own `GetDecisionOutcome` caller if needed.
+- `parseHumanDecisionOutcome`, `isTerminalHumanOutcome`
+- `WaitForDecisionOutcomeTimeoutError`
 
 ### Types
 
-- **`NoxyPushDeliveryStatus`**: `DELIVERED` \| `QUEUED` \| `NO_DEVICES` \| `REJECTED` \| `ERROR`
-- **`NoxyQuotaStatus`**: `QUOTA_ACTIVE` \| `QUOTA_SUSPENDED` \| `QUOTA_DELETED`
+- **`NoxyDeliveryStatus`**: `DELIVERED` | `QUEUED` | `NO_DEVICES` | `REJECTED` | `ERROR`
+- **`NoxyHumanDecisionOutcome`**: `PENDING` | `APPROVED` | `REJECTED` | `EXPIRED`
+- **`NoxyQuotaStatus`**: `QUOTA_ACTIVE` | `QUOTA_SUSPENDED` | `QUOTA_DELETED`
 
-## Encryption Details
+## Encryption (summary)
 
-1. **Key encapsulation**: For each device, the SDK encapsulates a shared secret using the device's Kyber post-quantum public key (`pq_public_key`).
-2. **Key derivation**: The shared secret is expanded via HKDF-SHA256 to a 256-bit AES key.
-3. **Payload encryption**: The notification payload (JSON) is encrypted with AES-256-GCM. The ciphertext includes the GCM auth tag appended for integrity verification.
-4. **Transmission**: Only `kyber_ct`, `nonce`, and `ciphertext` are sent to the relay. The relay cannot decrypt; only the target device (with its secret key) can decrypt.
+1. Kyber768 encapsulation per device `pq_public_key`.
+2. HKDF-SHA256 → AES-256-GCM key; random 12-byte nonce.
+3. JSON payload encrypted; only `kyber_ct`, `nonce`, `ciphertext` cross the relay.
 
 ## Development
 
@@ -116,6 +163,6 @@ pnpm run typecheck
 pnpm run test
 ```
 
-## 📄 License
+## License
 
 MIT

@@ -1,6 +1,6 @@
 {
   "name": "@noxy-network/node-sdk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Decision Layer SDK for AI agents. Encrypted actionable decisions over gRPC.",
   "author": "Noxy Network",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "src"
   ],
   "scripts": {
-    "build": "rollup -c && cp src/kyber/kyber.wasm dist/kyber.wasm && mkdir -p dist/proto && cp src/proto/agent.proto dist/proto/agent.proto",
+    "build": "rm -rf dist && rollup -c && cp src/kyber/kyber.wasm dist/kyber.wasm && mkdir -p dist/proto && cp src/proto/agent.proto dist/proto/agent.proto",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf node_modules && rm -rf dist",
@@ -48,6 +48,7 @@
     "@types/bluebird": "^3.5.42",
     "eslint": "^10.0.0",
     "rollup": "^4.57.1",
+    "rollup-plugin-dts": "^6.4.1",
     "rollup-plugin-tsconfig-paths": "^1.5.2",
     "tslib": "^2.8.1",
     "typescript": "^5.9.3",

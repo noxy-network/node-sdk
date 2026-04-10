@@ -8,5 +8,3 @@
 .pnpm-store
 # test coverage
 coverage
-# examples
-/examples

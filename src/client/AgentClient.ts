@@ -47,13 +47,13 @@ export class NoxyAgentClient {
   }
 
   /**
-   * Route an actionable decision to all devices registered for the given Web3 identity address.
+   * Route an actionable decision to all devices registered for the given logical identity id.
    * Returns relay **delivery** status per device (`DELIVERED`, `QUEUED`, etc.) and `decision_id` when applicable.
    * Poll {@link getDecisionOutcome} or {@link waitForDecisionOutcome} for human approve/reject/expired.
    */
   async sendDecision(
     identityAddress: NoxyIdentityAddress,
-    actionableDecision: Record<string, unknown>
+    actionableDecision: Record<string, unknown>,
   ): Promise<NoxyDeliveryOutcome[]> {
     const devices = await this.identity.getDevices(identityAddress);
     return this.decision.send(devices, actionableDecision, {

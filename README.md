@@ -1,6 +1,6 @@
 # @noxy-network/node-sdk
 
-SDK for **AI agent runtimes** integrating with the [Noxy](https://noxy.network) **Decision Layer**: send encrypted, **actionable** decision payloads (tool proposals, approvals, next-step hints) to registered agent devices over gRPC.
+SDK for **AI agent backends** integrating with [Noxy](https://noxy.network) **human-in-the-loop** guardrails: send encrypted, **actionable** prompts (tool proposals, approvals, next-step hints) to registered user devices over gRPC so **users can take decisions** before work proceeds.
 
 **Before you integrate:** Create your app at [noxy.network](https://noxy.network). When the app is created, you receive an **app id** and an **app token** (auth token). This Node SDK authenticates with the relay using the **app token** (`authToken` in the client config). The **app id** is used by client SDKs (browser, iOS, Android, Telegram bot), not as the bearer token here.
 
@@ -10,7 +10,7 @@ Use this SDK to:
 
 - **Route decisions** to devices bound to a Web3 identity (`0x…` address) — structured JSON you define (e.g. proposed tool calls, parameters, user-visible summaries).
 - **Receive delivery outcomes** from the relay (`DELIVERED`, `QUEUED`, `NO_DEVICES`, etc.) plus a **`decision_id`** when the relay accepts the route.
-- **Wait for human-in-the-loop resolution** — the wallet user **approves**, **rejects**, or the decision **expires**. The usual path is **`sendDecisionAndWaitForOutcome`** (route + poll in one step). Use `getDecisionOutcome` / `waitForDecisionOutcome` alone for finer control.
+- **Wait for human-in-the-loop resolution** — **users take decisions** on-device and **decision outcomes** return via polling; prompts can **expire** if unanswered. The usual path is **`sendDecisionAndWaitForOutcome`** (route + poll in one step). Use `getDecisionOutcome` / `waitForDecisionOutcome` alone for finer control.
 - **Query quota** for your agent application on the relay.
 - **Resolve identity devices** so each device receives its own encrypted copy of the decision.
 
@@ -25,9 +25,9 @@ The **encrypted path** covers **SDK → relay** and **relay → device**: decisi
 ```
                       Ciphertext only (E2E)                  Ciphertext only (E2E)
 ┌──────────────────┐     gRPC (TLS)      ┌─────────────────┐     gRPC (TLS), WSS  ┌──────────────────┐
-│  AI agent /      │ ◄─────────────────► │  Noxy relay     │ ◄──────────────────► │  Agent device    │
-│  orchestrator    │   RouteDecision     │  (Decision      │                      │  (human approves │
-│  (this SDK)      │   GetDecisionOutcome│   Layer)        │                      │   or rejects)    │
+│  AI agent /      │ ◄─────────────────► │  Noxy relay     │ ◄──────────────────► │  User device     │
+│  orchestrator    │   RouteDecision     │  human-in-the-  │                      │  (users take     │
+│  (this SDK)      │   GetDecisionOutcome│  loop relay     │                      │   decisions)     │
 │                  │   GetQuota          │   forwards only │                      │   decrypts       │
 │                  │   GetIdentityDevices│                 │                      │                  │
 └──────────────────┘                     └─────────────────┘                      └──────────────────┘
@@ -48,7 +48,7 @@ pnpm add @noxy-network/node-sdk
 
 ## Quick start
 
-Route a decision and wait until the user **approves**, **rejects**, or the decision **expires** (one call):
+Route encrypted prompts and wait until **users take decisions** or the prompt **expires** (one call):
 
 ```typescript
 import { initNoxyAgentClient, NoxyHumanDecisionOutcome } from '@noxy-network/node-sdk';

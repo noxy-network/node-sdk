@@ -45,7 +45,6 @@ export interface WaitForDecisionOutcomeOptions {
   signal?: AbortSignal;
 }
 
-/** Options for {@link NoxyAgentClient.sendDecisionAndWaitForOutcome} — same as {@link WaitForDecisionOutcomeOptions} without `decisionId` or `identityId` (both come from the method arguments). */
 export type SendDecisionAndWaitOptions = Omit<
   WaitForDecisionOutcomeOptions,
   'decisionId' | 'identityId'

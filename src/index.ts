@@ -4,7 +4,7 @@ import { NoxyAgentClient } from '@/client/AgentClient';
 export type { NoxyConfig } from '@/client/config';
 export { NoxyAgentClient } from '@/client/AgentClient';
 export type {
-  NoxyIdentityAddress,
+  NoxyIdentityId,
   NoxyDeliveryOutcome,
   NoxyGetDecisionOutcomeResponse,
   NoxyGetQuotaResponse,

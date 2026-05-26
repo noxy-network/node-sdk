@@ -1,11 +1,12 @@
 import { GrpcTransport } from '@/client/transport';
-import type { NoxyIdentityDevice } from '@/client/types';
+import type { NoxyIdentityDevice, NoxyIdentityId } from '@/client/types';
 import { generateRequestId } from '@/utils/request-id';
 
 export class IdentityService {
   constructor(private transport: GrpcTransport) {}
 
-  async getDevices(identityId: string): Promise<NoxyIdentityDevice[]> {
+  /** Relay `identity_id`: wallet (`0x…`), email, phone, app `user_id`, etc.—must match how devices are registered. */
+  async getDevices(identityId: NoxyIdentityId): Promise<NoxyIdentityDevice[]> {
     const request = {
       request_id: generateRequestId(),
       identity_id: identityId,

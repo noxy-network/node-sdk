@@ -1,6 +1,6 @@
 {
   "name": "@noxy-network/node-sdk",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Decision Layer SDK for AI agents. Encrypted actionable decisions over gRPC.",
   "author": "Noxy Network",
   "license": "MIT",

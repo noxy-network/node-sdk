@@ -6,7 +6,7 @@ import { DecisionService } from '@/services/decision.service';
 import { QuotaService } from '@/services/quota.service';
 import { IdentityService } from '@/services/identity.service';
 import type {
-  NoxyIdentityAddress,
+  NoxyIdentityId,
   NoxyDeliveryOutcome,
   NoxyGetQuotaResponse,
   NoxyGetDecisionOutcomeResponse,
@@ -52,10 +52,10 @@ export class NoxyAgentClient {
    * Poll {@link getDecisionOutcome} or {@link waitForDecisionOutcome} for human approve/reject/expired.
    */
   async sendDecision(
-    identityAddress: NoxyIdentityAddress,
+    identityId: NoxyIdentityId,
     actionableDecision: Record<string, unknown>,
   ): Promise<NoxyDeliveryOutcome[]> {
-    const devices = await this.identity.getDevices(identityAddress);
+    const devices = await this.identity.getDevices(identityId);
     return this.decision.send(devices, actionableDecision, {
       ttlSeconds: this.config.decisionTtlSeconds,
     });
@@ -99,14 +99,14 @@ export class NoxyAgentClient {
   /**
    * Calls {@link sendDecision} then {@link waitForDecisionOutcome} using the first delivery
    * that includes a non-empty `decision_id`. Use when a single human outcome applies to the routed batch.
-   * `identityId` for polling is the same as `identityAddress`.
+   * `identityId` for polling matches the logical identity passed to {@link sendDecision}.
    */
   async sendDecisionAndWaitForOutcome(
-    identityAddress: NoxyIdentityAddress,
+    identityId: NoxyIdentityId,
     actionableDecision: Record<string, unknown>,
     options?: SendDecisionAndWaitOptions
   ): Promise<NoxyGetDecisionOutcomeResponse> {
-    const deliveries = await this.sendDecision(identityAddress, actionableDecision);
+    const deliveries = await this.sendDecision(identityId, actionableDecision);
     const withId = deliveries.find((d) => d.decision_id && d.decision_id.length > 0);
     if (!withId) {
       throw new SendDecisionAndWaitNoDecisionIdError();
@@ -114,7 +114,7 @@ export class NoxyAgentClient {
     return this.waitForDecisionOutcome({
       ...options,
       decisionId: withId.decision_id,
-      identityId: identityAddress,
+      identityId,
     });
   }
 

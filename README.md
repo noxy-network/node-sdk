@@ -8,7 +8,7 @@ SDK for **AI agent backends** integrating with [Noxy](https://noxy.network) **hu
 
 Use this SDK to:
 
-- **Route decisions** to devices bound to a Web3 identity (`0x…` address) — structured JSON you define (e.g. proposed tool calls, parameters, user-visible summaries).
+- **Route decisions** to devices bound to a **logical identity** (`identity_id` on the relay) — whichever form your app uses when users register devices, e.g. Web3 wallet (`0x…`), **email**, **phone** (E.164-style), **user_id**, or another stable string — plus structured JSON you define (tool proposals, parameters, summaries).
 - **Receive delivery outcomes** from the relay (`DELIVERED`, `QUEUED`, `NO_DEVICES`, etc.) plus a **`decision_id`** when the relay accepts the route.
 - **Wait for human-in-the-loop resolution** — **users take decisions** on-device and **decision outcomes** return via polling; prompts can **expire** if unanswered. The usual path is **`sendDecisionAndWaitForOutcome`** (route + poll in one step). Use `getDecisionOutcome` / `waitForDecisionOutcome` alone for finer control.
 - **Query quota** for your agent application on the relay.
@@ -59,7 +59,8 @@ const client = await initNoxyAgentClient({
   decisionTtlSeconds: 3600,
 });
 
-const identity = '0x...';
+const identity =
+  '0xaabb...'; // or e.g. 'user_42', '+15555550100', 'you@example.com' — match how devices are linked in your Noxy app
 
 const resolution = await client.sendDecisionAndWaitForOutcome(identity, {
   kind: 'propose_tool_call',
@@ -106,19 +107,19 @@ Async init (loads Kyber WASM for post-quantum encapsulation).
 
 ### `NoxyAgentClient`
 
-#### `sendDecision(identityAddress, actionableDecision): Promise<NoxyDeliveryOutcome[]>`
+#### `sendDecision(identityId, actionableDecision): Promise<NoxyDeliveryOutcome[]>`
 
-Routes an encrypted decision to every device registered for the identity.
+Routes an encrypted decision to every device registered for the **`identity_id`** (wallet, email, phone, `user_id`, etc.—must match relay/device registration).
 
 - **Returns** per device: relay **`status`** (`DELIVERED`, `QUEUED`, `NO_DEVICES`, …), **`request_id`**, and **`decision_id`** when the relay can track human resolution (use with `GetDecisionOutcome`).
 
 #### `getDecisionOutcome({ decisionId, identityId })`
 
-Single poll for human-in-the-loop state (`pending` + `outcome`).
+Single poll for human-in-the-loop state (`pending` + `outcome`). **`identityId`** is the same logical identity string you passed to `sendDecision`.
 
-#### `sendDecisionAndWaitForOutcome(identityAddress, actionableDecision, options?)`
+#### `sendDecisionAndWaitForOutcome(identityId, actionableDecision, options?)`
 
-Runs `sendDecision`, then `waitForDecisionOutcome` using the **first** delivery that has a non-empty `decision_id`. Polling uses `identityAddress` as `identityId`. Optional `options` is `SendDecisionAndWaitOptions` (same as `WaitForDecisionOutcomeOptions` without `decisionId` or `identityId` — e.g. `maxWaitMs`, backoff, `signal`).
+Runs `sendDecision`, then `waitForDecisionOutcome` using the **first** delivery that has a non-empty `decision_id`. Polling uses the same **`identityId`** as routing. Optional `options` is `SendDecisionAndWaitOptions` (same as `WaitForDecisionOutcomeOptions` without `decisionId` or `identityId` — e.g. `maxWaitMs`, backoff, `signal`).
 
 - **Returns** `NoxyGetDecisionOutcomeResponse` (same as `waitForDecisionOutcome`). Throws `SendDecisionAndWaitNoDecisionIdError` if no `decision_id` was returned.
 
@@ -144,6 +145,7 @@ Quota usage for the application.
 
 ### Types
 
+- **`NoxyIdentityId`**: Logical identity string (wallet, email, phone, application `user_id`, … — same convention as relay `identity_id`).
 - **`NoxyDeliveryStatus`**: `DELIVERED` | `QUEUED` | `NO_DEVICES` | `REJECTED` | `ERROR`
 - **`NoxyHumanDecisionOutcome`**: `PENDING` | `APPROVED` | `REJECTED` | `EXPIRED`
 - **`NoxyQuotaStatus`**: `QUOTA_ACTIVE` | `QUOTA_SUSPENDED` | `QUOTA_DELETED`

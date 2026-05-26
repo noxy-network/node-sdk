@@ -1,5 +1,11 @@
-/** Web3 identity (wallet) address for routing decisions to the right agent devices. */
-export type NoxyIdentityAddress = `0x${string}`;
+/**
+ * Logical identity the relay resolves to registered devices (`GetIdentityDevices.identity_id`),
+ * and the same value passed as `identity_id` when polling human outcomes.
+ *
+ * Typical forms depend on how your Noxy app links users to devices — for example Web3 wallet (`0x…`),
+ * email, E.164 phone number, or an opaque application `user_id`.
+ */
+export type NoxyIdentityId = string;
 
 /** Relay-side delivery status after `RouteDecision` (matches proto `DeliveryStatus`). */
 export enum NoxyDeliveryStatus {

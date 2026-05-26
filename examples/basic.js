@@ -1,26 +1,33 @@
 /**
- * Minimal agent: human approval gate via the Decision Layer.
+ * Minimal agent: human approval gate via the Decision Layer (`agent.proto`).
  *
- * Run from the `examples` directory (after `pnpm run build` at repo root):
- *   NOXY_APP_TOKEN=<your bearer token> NOXY_TARGET_ADDRESS=<0x wallet address> node basic.js
+ * Run from the `examples` directory (after `pnpm run build` at repo root).
+ * Requires Node.js >= 22 (see package `engines`).
  *
- * Or load a `.env` file (Node 20.6+):
+ *   NOXY_APP_TOKEN=<relay bearer token> NOXY_IDENTITY_ID=<logical user id> node basic.js
+ *
+ * Use the **same identity string your Noxy app uses** when linking devices (examples: wallet `0x…`,
+ * `user_id`, email, phone).
+ *
+ * Or load a `.env` file:
  *   node --env-file=.env basic.js
- * with NOXY_APP_TOKEN and NOXY_TARGET_ADDRESS set in that file.
+ * with NOXY_APP_TOKEN and NOXY_IDENTITY_ID set.
  */
 import {
   initNoxyAgentClient,
   isTerminalHumanOutcome,
   NoxyHumanDecisionOutcome,
+  SendDecisionAndWaitNoDecisionIdError,
+  WaitForDecisionOutcomeTimeoutError,
 } from '../dist/bundle.js';
 
 const authToken = process.env.NOXY_APP_TOKEN?.trim();
-const identity = process.env.NOXY_TARGET_ADDRESS?.trim();
+const identity = process.env.NOXY_IDENTITY_ID?.trim();
 
 if (!authToken || !identity) {
   console.error(
-    'Missing NOXY_APP_TOKEN or NOXY_TARGET_ADDRESS. Example:\n' +
-      '  NOXY_APP_TOKEN=... NOXY_TARGET_ADDRESS=0x... node basic.js\n' +
+    'Missing NOXY_APP_TOKEN or NOXY_IDENTITY_ID (logical user id matching device registration).\n' +
+      '  NOXY_APP_TOKEN=... NOXY_IDENTITY_ID=... node basic.js\n' +
       'Or: node --env-file=.env basic.js'
   );
   process.exit(1);
@@ -34,7 +41,12 @@ if (!authToken || !identity) {
   });
 
   const quota = await client.getQuota();
-  console.log('My App Quota:', quota);
+  console.log('Relay quota:', {
+    app: quota.app_name,
+    remaining: quota.quota_remaining,
+    total: quota.quota_total,
+    status: quota.status,
+  });
 
   const proposedAction = {
     kind: 'propose_tool_call',
@@ -48,7 +60,7 @@ if (!authToken || !identity) {
   let error = undefined;
   try {
     resolution = await client.sendDecisionAndWaitForOutcome(identity, proposedAction, {
-      maxWaitMs: 300000, // 5 minutes
+      maxWaitMs: 300000, // 5 minutes — default SDK budget is 15m; shorten for the demo
     });
   } catch (e) {
     error = e;
@@ -59,12 +71,23 @@ if (!authToken || !identity) {
 })();
 
 /**
- * @param {{ outcome: number; pending: boolean; request_id: string } | null} resolution
- * @param {unknown} [error] thrown by sendDecisionAndWaitForOutcome, if any
- * @returns {boolean} `true` if the human outcome is approved; `false` otherwise (rejected, error, pending, expired, etc.).
+ * @param {{ request_id: string; pending: boolean; outcome: number } | null} resolution
+ *   Relay human outcome (`NoxyGetDecisionOutcomeResponse`): normalized `DecisionOutcome` enum (0–3).
+ * @param {unknown} [error]
+ * @returns {boolean} `true` only when outcome is APPROVED.
  */
 function applyHumanGate(resolution, error) {
   if (error != null) {
+    if (error instanceof SendDecisionAndWaitNoDecisionIdError) {
+      console.warn(
+        'Human gate: no decision_id after route — check relay delivery (e.g. registered devices / NO_DEVICES).'
+      );
+      return false;
+    }
+    if (error instanceof WaitForDecisionOutcomeTimeoutError) {
+      console.warn('Human gate: waited until maxWaitMs without a terminal outcome.');
+      return false;
+    }
     console.warn('Human gate: error.', error);
     return false;
   }
@@ -77,16 +100,24 @@ function applyHumanGate(resolution, error) {
     });
   }
 
-  if (resolution?.outcome === NoxyHumanDecisionOutcome.APPROVED) {
-    console.log('Proceeding: user approved — agent should execute the proposed tool call.');
-    return true;
-  }
-
-  if (resolution?.outcome === NoxyHumanDecisionOutcome.REJECTED) {
-    console.log('Abort: user rejected — agent should not execute the proposed tool call.');
+  if (!resolution) {
+    console.log('Human gate: empty resolution.');
     return false;
   }
 
-  console.log('Human gate: not approved (pending, expired, or inconclusive).');
-  return false;
+  switch (resolution.outcome) {
+    case NoxyHumanDecisionOutcome.APPROVED:
+      console.log('Proceeding: user approved — agent should execute the proposed tool call.');
+      return true;
+    case NoxyHumanDecisionOutcome.REJECTED:
+      console.log('Abort: user rejected — agent should not execute the proposed tool call.');
+      return false;
+    case NoxyHumanDecisionOutcome.EXPIRED:
+      console.log('Abort: decision expired unanswered — agent should not execute the proposed tool call.');
+      return false;
+    case NoxyHumanDecisionOutcome.PENDING:
+    default:
+      console.log('Human gate: not approved (still pending or non-terminal outcome despite wait).');
+      return false;
+  }
 }
